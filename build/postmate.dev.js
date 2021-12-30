@@ -84,7 +84,6 @@
     if (message.data.type !== messageType) return false;
     if (!messageTypes[message.data.postmate]) return false;
     if (!message.data.ain) return false;
-    if (message.data.ain !== 'true' || message.data.ain !== true) return false;
     return true;
   };
   /**
@@ -160,7 +159,7 @@
         var uid = generateNewMessageId();
 
         var transact = function transact(e) {
-          if (e.data.uid === uid && e.data.postmate === 'reply') {
+          if (e.data.uid === uid && e.data.postmate === 'reply' && e.data.ain) {
             _this2.parent.removeEventListener('message', transact, false);
 
             resolve(e.data.value);
