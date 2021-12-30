@@ -42,6 +42,9 @@ export const resolveOrigin = (url) => {
   return a.origin || `${protocol}//${host}`
 }
 
+var waitForFrameCount = 1
+var isReplyAdded = false
+
 const messageTypes = {
   handshake: 1,
   'handshake-reply': 1,
@@ -69,6 +72,8 @@ export const sanitize = (message, allowedOrigin) => {
   ) return false
   if (message.data.type !== messageType) return false
   if (!messageTypes[message.data.postmate]) return false
+  if (!message.data.ain) return false
+  if (message.data.ain !== 'true' || message.data.ain !== true) return false
   return true
 }
 
@@ -148,6 +153,7 @@ export class ParentAPI {
       this.child.postMessage({
         postmate: 'request',
         type: messageType,
+        ain: true,
         property,
         uid,
       }, this.childOrigin)
@@ -159,6 +165,7 @@ export class ParentAPI {
     this.child.postMessage({
       postmate: 'call',
       type: messageType,
+      ain: true,
       property,
       data,
     }, this.childOrigin)
@@ -218,6 +225,7 @@ export class ChildAPI {
           property,
           postmate: 'reply',
           type: messageType,
+          ain: true,
           uid,
           value,
         }, e.origin))
@@ -230,6 +238,7 @@ export class ChildAPI {
     }
     this.parent.postMessage({
       postmate: 'emit',
+      ain: true,
       type: messageType,
       value: {
         name,
@@ -278,6 +287,24 @@ class Postmate {
     return this.sendHandshake(url)
   }
 
+  waitForFrameRequest () {
+    var _this4 = this
+    return new Promise((resolve, reject) => {
+      if (waitForFrameCount >= 3) {
+        reject(new Error('Something went wrong with the handshake'))
+      }
+      waitForFrameCount++
+      var listener = function listener (e) {
+        if (e.data.ain === 'waitingForHandshake') {
+          log('Parent: Child ready to handshake')
+          _this4.parent.removeEventListener('message', listener)
+          resolve(true)
+        }
+      }
+      _this4.parent.addEventListener('message', listener)
+    })
+  }
+
   /**
    * Begins the handshake strategy
    * @param  {String} url The URL to send a handshake request to
@@ -290,7 +317,7 @@ class Postmate {
     return new Postmate.Promise((resolve, reject) => {
       const reply = (e) => {
         if (!sanitize(e, childOrigin)) return false
-        if (e.data.postmate === 'handshake-reply') {
+        if (e.data.postmate === 'handshake-reply' && (e.data.ain === 'true' || e.data.ain === true)) {
           clearInterval(responseInterval)
           if (process.env.NODE_ENV !== 'production') {
             log('Parent: Received handshake reply from Child')
@@ -311,7 +338,10 @@ class Postmate {
         return reject('Failed handshake')
       }
 
-      this.parent.addEventListener('message', reply, false)
+      if (!isReplyAdded) {
+        isReplyAdded = true
+        this.parent.addEventListener('message', reply, false)
+      }
 
       const doSend = () => {
         attempt++
@@ -321,11 +351,15 @@ class Postmate {
         this.child.postMessage({
           postmate: 'handshake',
           type: messageType,
+          ain: true,
           model: this.model,
         }, childOrigin)
 
         if (attempt === maxHandshakeRequests) {
           clearInterval(responseInterval)
+          this.waitForFrameRequest().then(() => {
+            doSend()
+          })
         }
       }
 
@@ -361,6 +395,9 @@ Postmate.Model = class Model {
   constructor (model) {
     this.child = window
     this.model = model
+    window.parent.postMessage({
+      ain: true,
+    }, '*')
     this.parent = this.child.parent
     return this.sendHandshakeReply()
   }
@@ -375,7 +412,7 @@ Postmate.Model = class Model {
         if (!e.data.postmate) {
           return
         }
-        if (e.data.postmate === 'handshake') {
+        if (e.data.postmate === 'handshake' && (e.data.ain === 'true' || e.data.ain === true)) {
           if (process.env.NODE_ENV !== 'production') {
             log('Child: Received handshake from Parent')
           }
@@ -385,6 +422,7 @@ Postmate.Model = class Model {
           }
           e.source.postMessage({
             postmate: 'handshake-reply',
+            ain: true,
             type: messageType,
           }, e.origin)
           this.parentOrigin = e.origin

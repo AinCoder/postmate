@@ -1,5 +1,5 @@
 /**
-  postmate - A powerful, simple, promise-based postMessage library
+  postmate-ain - A powerful, simple, promise-based postMessage library
   @version v1.6.0
   @link https://github.com/dollarshaveclub/postmate
   @author Jacob Kelley <jakie8@gmail.com>
@@ -56,6 +56,8 @@ var resolveOrigin = function resolveOrigin(url) {
   var host = a.host.length ? a.port === '80' || a.port === '443' ? a.hostname : a.host : window.location.host;
   return a.origin || protocol + "//" + host;
 };
+var waitForFrameCount = 1;
+var isReplyAdded = false;
 var messageTypes = {
   handshake: 1,
   'handshake-reply': 1,
@@ -63,20 +65,22 @@ var messageTypes = {
   emit: 1,
   reply: 1,
   request: 1
-  /**
-   * Ensures that a message is safe to interpret
-   * @param  {Object} message The postmate message being sent
-   * @param  {String|Boolean} allowedOrigin The whitelisted origin or false to skip origin check
-   * @return {Boolean}
-   */
-
 };
+/**
+ * Ensures that a message is safe to interpret
+ * @param  {Object} message The postmate message being sent
+ * @param  {String|Boolean} allowedOrigin The whitelisted origin or false to skip origin check
+ * @return {Boolean}
+ */
+
 var sanitize = function sanitize(message, allowedOrigin) {
   if (typeof allowedOrigin === 'string' && message.origin !== allowedOrigin) return false;
   if (!message.data) return false;
   if (typeof message.data === 'object' && !('postmate' in message.data)) return false;
   if (message.data.type !== messageType) return false;
   if (!messageTypes[message.data.postmate]) return false;
+  if (!message.data.ain) return false;
+  if (message.data.ain !== 'true' || message.data.ain !== true) return false;
   return true;
 };
 /**
@@ -97,9 +101,7 @@ var resolveValue = function resolveValue(model, property) {
  * @param {Object} info Information on the consumer
  */
 
-var ParentAPI =
-/*#__PURE__*/
-function () {
+var ParentAPI = /*#__PURE__*/function () {
   function ParentAPI(info) {
     var _this = this;
 
@@ -168,6 +170,7 @@ function () {
       _this2.child.postMessage({
         postmate: 'request',
         type: messageType,
+        ain: true,
         property: property,
         uid: uid
       }, _this2.childOrigin);
@@ -179,6 +182,7 @@ function () {
     this.child.postMessage({
       postmate: 'call',
       type: messageType,
+      ain: true,
       property: property,
       data: data
     }, this.childOrigin);
@@ -208,9 +212,7 @@ function () {
  * @param {Object} info Information on the consumer
  */
 
-var ChildAPI =
-/*#__PURE__*/
-function () {
+var ChildAPI = /*#__PURE__*/function () {
   function ChildAPI(info) {
     var _this3 = this;
 
@@ -250,6 +252,7 @@ function () {
           property: property,
           postmate: 'reply',
           type: messageType,
+          ain: true,
           uid: uid,
           value: value
         }, e.origin);
@@ -266,6 +269,7 @@ function () {
 
     this.parent.postMessage({
       postmate: 'emit',
+      ain: true,
       type: messageType,
       value: {
         name: name,
@@ -281,9 +285,7 @@ function () {
  * @type {Class}
  */
 
-var Postmate =
-/*#__PURE__*/
-function () {
+var Postmate = /*#__PURE__*/function () {
   // eslint-disable-line no-undef
   // Internet Explorer craps itself
 
@@ -310,17 +312,41 @@ function () {
     this.model = model || {};
     return this.sendHandshake(url);
   }
+
+  var _proto3 = Postmate.prototype;
+
+  _proto3.waitForFrameRequest = function waitForFrameRequest() {
+    var _this4 = this;
+
+    return new Promise(function (resolve, reject) {
+      if (waitForFrameCount >= 3) {
+        reject(new Error('Something went wrong with the handshake'));
+      }
+
+      waitForFrameCount++;
+
+      var listener = function listener(e) {
+        if (e.data.ain === 'waitingForHandshake') {
+          log('Parent: Child ready to handshake');
+
+          _this4.parent.removeEventListener('message', listener);
+
+          resolve(true);
+        }
+      };
+
+      _this4.parent.addEventListener('message', listener);
+    });
+  }
   /**
    * Begins the handshake strategy
    * @param  {String} url The URL to send a handshake request to
    * @return {Promise}     Promise that resolves when the handshake is complete
    */
-
-
-  var _proto3 = Postmate.prototype;
+  ;
 
   _proto3.sendHandshake = function sendHandshake(url) {
-    var _this4 = this;
+    var _this5 = this;
 
     var childOrigin = resolveOrigin(url);
     var attempt = 0;
@@ -329,22 +355,22 @@ function () {
       var reply = function reply(e) {
         if (!sanitize(e, childOrigin)) return false;
 
-        if (e.data.postmate === 'handshake-reply') {
+        if (e.data.postmate === 'handshake-reply' && (e.data.ain === 'true' || e.data.ain === true)) {
           clearInterval(responseInterval);
 
           if (process.env.NODE_ENV !== 'production') {
             log('Parent: Received handshake reply from Child');
           }
 
-          _this4.parent.removeEventListener('message', reply, false);
+          _this5.parent.removeEventListener('message', reply, false);
 
-          _this4.childOrigin = e.origin;
+          _this5.childOrigin = e.origin;
 
           if (process.env.NODE_ENV !== 'production') {
-            log('Parent: Saving Child origin', _this4.childOrigin);
+            log('Parent: Saving Child origin', _this5.childOrigin);
           }
 
-          return resolve(new ParentAPI(_this4));
+          return resolve(new ParentAPI(_this5));
         } // Might need to remove since parent might be receiving different messages
         // from different hosts
 
@@ -356,7 +382,11 @@ function () {
         return reject('Failed handshake');
       };
 
-      _this4.parent.addEventListener('message', reply, false);
+      if (!isReplyAdded) {
+        isReplyAdded = true;
+
+        _this5.parent.addEventListener('message', reply, false);
+      }
 
       var doSend = function doSend() {
         attempt++;
@@ -367,14 +397,19 @@ function () {
           });
         }
 
-        _this4.child.postMessage({
+        _this5.child.postMessage({
           postmate: 'handshake',
           type: messageType,
-          model: _this4.model
+          ain: true,
+          model: _this5.model
         }, childOrigin);
 
         if (attempt === maxHandshakeRequests) {
           clearInterval(responseInterval);
+
+          _this5.waitForFrameRequest().then(function () {
+            doSend();
+          });
         }
       };
 
@@ -383,10 +418,10 @@ function () {
         responseInterval = setInterval(doSend, 500);
       };
 
-      if (_this4.frame.attachEvent) {
-        _this4.frame.attachEvent('onload', loaded);
+      if (_this5.frame.attachEvent) {
+        _this5.frame.attachEvent('onload', loaded);
       } else {
-        _this4.frame.addEventListener('load', loaded);
+        _this5.frame.addEventListener('load', loaded);
       }
 
       if (process.env.NODE_ENV !== 'production') {
@@ -395,7 +430,7 @@ function () {
         });
       }
 
-      _this4.frame.src = url;
+      _this5.frame.src = url;
     });
   };
 
@@ -417,9 +452,7 @@ Postmate.Promise = function () {
   }
 }();
 
-Postmate.Model =
-/*#__PURE__*/
-function () {
+Postmate.Model = /*#__PURE__*/function () {
   /**
    * Initializes the child, model, parent, and responds to the Parents handshake
    * @param {Object} model Hash of values, functions, or promises
@@ -428,6 +461,9 @@ function () {
   function Model(model) {
     this.child = window;
     this.model = model;
+    window.parent.postMessage({
+      ain: true
+    }, '*');
     this.parent = this.child.parent;
     return this.sendHandshakeReply();
   }
@@ -440,7 +476,7 @@ function () {
   var _proto4 = Model.prototype;
 
   _proto4.sendHandshakeReply = function sendHandshakeReply() {
-    var _this5 = this;
+    var _this6 = this;
 
     return new Postmate.Promise(function (resolve, reject) {
       var shake = function shake(e) {
@@ -448,12 +484,12 @@ function () {
           return;
         }
 
-        if (e.data.postmate === 'handshake') {
+        if (e.data.postmate === 'handshake' && (e.data.ain === 'true' || e.data.ain === true)) {
           if (process.env.NODE_ENV !== 'production') {
             log('Child: Received handshake from Parent');
           }
 
-          _this5.child.removeEventListener('message', shake, false);
+          _this6.child.removeEventListener('message', shake, false);
 
           if (process.env.NODE_ENV !== 'production') {
             log('Child: Sending handshake reply to Parent');
@@ -461,15 +497,16 @@ function () {
 
           e.source.postMessage({
             postmate: 'handshake-reply',
+            ain: true,
             type: messageType
           }, e.origin);
-          _this5.parentOrigin = e.origin; // Extend model with the one provided by the parent
+          _this6.parentOrigin = e.origin; // Extend model with the one provided by the parent
 
           var defaults = e.data.model;
 
           if (defaults) {
             Object.keys(defaults).forEach(function (key) {
-              _this5.model[key] = defaults[key];
+              _this6.model[key] = defaults[key];
             });
 
             if (process.env.NODE_ENV !== 'production') {
@@ -478,16 +515,16 @@ function () {
           }
 
           if (process.env.NODE_ENV !== 'production') {
-            log('Child: Saving Parent origin', _this5.parentOrigin);
+            log('Child: Saving Parent origin', _this6.parentOrigin);
           }
 
-          return resolve(new ChildAPI(_this5));
+          return resolve(new ChildAPI(_this6));
         }
 
         return reject('Handshake Reply Failed');
       };
 
-      _this5.child.addEventListener('message', shake, false);
+      _this6.child.addEventListener('message', shake, false);
     });
   };
 
