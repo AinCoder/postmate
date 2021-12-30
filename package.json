@@ -1,5 +1,5 @@
 {
-  "name": "postmate-ain",
+  "name": "postmate",
   "version": "1.6.0",
   "description": "A powerful, simple, promise-based postMessage library",
   "main": "build/postmate.js",
