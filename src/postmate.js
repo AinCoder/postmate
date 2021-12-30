@@ -295,7 +295,7 @@ class Postmate {
       }
       waitForFrameCount++
       var listener = function listener (e) {
-        if (e.data.ain === 'waitingForHandshake') {
+        if (e.data.ain === 'true' || e.data.ain === true) {
           log('Parent: Child ready to handshake')
           _this4.parent.removeEventListener('message', listener)
           resolve(true)

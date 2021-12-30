@@ -1,5 +1,5 @@
 /**
-  postmate-ain - A powerful, simple, promise-based postMessage library
+  postmate - A powerful, simple, promise-based postMessage library
   @version v1.6.0
   @link https://github.com/dollarshaveclub/postmate
   @author Jacob Kelley <jakie8@gmail.com>
@@ -326,7 +326,7 @@ var Postmate = /*#__PURE__*/function () {
       waitForFrameCount++;
 
       var listener = function listener(e) {
-        if (e.data.ain === 'waitingForHandshake') {
+        if (e.data.ain === 'true' || e.data.ain === true) {
           log('Parent: Child ready to handshake');
 
           _this4.parent.removeEventListener('message', listener);
