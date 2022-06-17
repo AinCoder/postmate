@@ -304,13 +304,19 @@ var Postmate = /*#__PURE__*/function () {
     this.frame = document.createElement('iframe');
     this.frame.name = name || '';
     this.frame.classList.add.apply(this.frame.classList, classListArray);
+    this.frame.setAttribute('onload', this.dispatchLoadEvent);
     container.appendChild(this.frame);
+    this.frame.addEventListener('load', this.dispatchLoadEvent);
     this.child = this.frame.contentWindow || this.frame.contentDocument.parentWindow;
     this.model = model || {};
     return this.sendHandshake(url);
   }
 
   var _proto3 = Postmate.prototype;
+
+  _proto3.dispatchLoadEvent = function dispatchLoadEvent() {
+    window.dispatchEvent(new Event('ain-frame:loaded'));
+  };
 
   _proto3.waitForFrameRequest = function waitForFrameRequest() {
     var _this4 = this;
